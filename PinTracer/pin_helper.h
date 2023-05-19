@@ -166,6 +166,7 @@ string GetAddrInfo(ADDRINT addr);
 #endif	// XED
 
 int get_disasm(ADDRINT addr, string& res);
+int get_disasm64(ADDRINT addr, string& res);
 size_t check_disasm(ADDRINT addr);
 size_t check_disasm2(ADDRINT addr);
 bool check_ins_valid(ADDRINT addr);

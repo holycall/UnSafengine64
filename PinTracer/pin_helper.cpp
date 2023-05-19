@@ -231,6 +231,30 @@ int get_disasm(ADDRINT addr, string& res)
 }
 
 
+int get_disasm64(ADDRINT addr, string& res)
+{
+	static const xed_state_t dstate = { XED_MACHINE_MODE_LONG_64, XED_ADDRESS_WIDTH_64b };
+	xed_decoded_inst_t xedd;
+	xed_decoded_inst_zero_set_mode(&xedd, &dstate);
+
+	const unsigned int max_inst_len = 15;
+
+	xed_error_enum_t xed_code = xed_decode(&xedd, reinterpret_cast<UINT8*>(addr), max_inst_len);
+	BOOL xed_ok = (xed_code == XED_ERROR_NONE);
+	if (xed_ok) {
+		char buf[2048];
+
+		bool ok = xed_format_context(XED_SYNTAX_INTEL, &xedd, buf, 2048, addr, 0, 0);
+		if (ok) {
+			res = string(buf);
+			return xed_decoded_inst_get_length(&xedd);
+		}
+	}
+	return 0;
+}
+
+
+
 
 size_t check_disasm2(ADDRINT addr)
 {

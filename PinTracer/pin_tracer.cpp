@@ -29,9 +29,8 @@ bool isWriteExecute = false;
 bool isPrintBasicBlockHex = false;
 bool isBlockTrace = false;
 bool isBlockTracePT = false;
-bool isMainTrace = false;
-bool isAPITrace = false;
-bool isMainAPITrace = false;
+bool isDLLTrace = false;
+bool isDynamicGeneratedCodeTrace = false;
 bool isStringTrace = false;
 bool isDumpCode = false;
 bool isVMAnalysis = false;
@@ -111,10 +110,6 @@ map <THREADID, ADDRINT> thr_start_apis_index;	// api trace index in trc_start_ap
 map <THREADID, ADDRINT> thr_end_apis_index;	// api trace index in trc_end_apis 
 
 bool isTrcOn = false;
-bool is_trc_start_option = false;
-
-
-
 
 // registers used for obfuscation
 #ifdef TARGET_IA32
@@ -407,6 +402,10 @@ ADDRINT get_exception_handler_jump_target(ADDRINT ex_va)
 	return 0;
 }
 
+ADDRINT get_x86_64_mod_change_skip_target(ADDRINT push_va) {
+	return 0;
+}
+
 
 void INS_WriteExecuteTrace_MW(CONTEXT* ctxt, ADDRINT ip, size_t mSize, ADDRINT targetAddr, THREADID threadid)
 {
@@ -468,16 +467,20 @@ void TRC_WriteExecute(ADDRINT addr, THREADID tid)
 }
 
 
-//////////////////////////////
 
-
-// Block Trace Functions
 void TRC_Load(TRACE trc, void* v)
 {
 	ADDRINT addr = TRACE_Address(trc);
 
+	bool is_main_or_dgc = false;
+	if (IS_MAIN_IMG(addr)) {
+		is_main_or_dgc = true;
+	} 
+	else if (!GetModuleInfo(addr)) {
+		is_main_or_dgc = true;
+	}
 
-	if ((isAntiAntiPin || isAntiAntiVM) && IS_MAIN_IMG(addr)) {				
+	if ((isAntiAntiPin || isAntiAntiVM) && is_main_or_dgc) {
 		for (BBL bbl = TRACE_BblHead(trc); BBL_Valid(bbl); bbl = BBL_Next(bbl)) {
 			ADDRINT bbl_addr = BBL_Address(bbl);
 			size_t bbl_size = BBL_Size(bbl);
@@ -498,6 +501,7 @@ void TRC_Load(TRACE trc, void* v)
 					}
 				}
 #elif TARGET_IA32
+				
 				if (INS_Mnemonic(ins) == "POPFD" && bbl_size == 1) {
 					ADDRINT jmptgt = get_exception_handler_jump_target(bbl_addr);
 					if (jmptgt != 0) {
@@ -511,7 +515,20 @@ void TRC_Load(TRACE trc, void* v)
 							IARG_THREAD_ID,
 							IARG_END);
 					}
+				}				
+				
+				INS nextins = INS_Next(ins);
+				if (INS_Valid(nextins) && INS_IsFarRet(nextins)) {					
+					*fout << toHex(bbl_addr) << "# Checking Far Ret - X86-64 Mode Change" << endl;
+					BBL_InsertCall(
+						bbl, IPOINT_BEFORE, (AFUNPTR)BBL_Skip_X86_64_Mode_Change,
+						IARG_CONTEXT,
+						IARG_ADDRINT, bbl_addr,
+						IARG_THREAD_ID,
+						IARG_END);
 				}
+
+
 #endif		
 			}
 
@@ -569,15 +586,15 @@ void TRC_Load(TRACE trc, void* v)
 		}
 	}
 
-	if (isAPITrace || isMainAPITrace) {
-		TRACE_InsertCall(trc, IPOINT_BEFORE, (AFUNPTR)TRC_APIOutput_Handler,
-			IARG_CONTEXT, 
-			IARG_INST_PTR, 
-			IARG_THREAD_ID,
-			IARG_END);
-	}
+	// API Trace
+	TRACE_InsertCall(trc, IPOINT_BEFORE, (AFUNPTR)TRC_APIOutput_Handler,
+		IARG_CONTEXT, 
+		IARG_INST_PTR, 
+		IARG_THREAD_ID,
+		IARG_END);
+	
 
-	if ((isMemWriteTrace || isMemReadTrace) && IS_MAIN_IMG(addr)) {
+	if ((isMemWriteTrace || isMemReadTrace) && is_main_or_dgc) {
 		for (BBL bbl = TRACE_BblHead(trc); BBL_Valid(bbl); bbl = BBL_Next(bbl)) {
 			for (INS ins = BBL_InsHead(bbl); INS_Valid(ins); ins = INS_Next(ins)) {
 				if (isMemWriteTrace) {
@@ -791,7 +808,7 @@ void TRC_Load(TRACE trc, void* v)
 		}
 	}
 
-	if (isWriteExecute && IS_MAIN_IMG(addr)) {		
+	if (isWriteExecute && is_main_or_dgc) {
 		TRACE_InsertCall(trc, IPOINT_BEFORE, (AFUNPTR)TRC_WriteExecute,
 			IARG_ADDRINT, addr,
 			IARG_THREAD_ID,
@@ -885,10 +902,13 @@ void TRC_Load(TRACE trc, void* v)
 		for (BBL bbl = TRACE_BblHead(trc); BBL_Valid(bbl); bbl = BBL_Next(bbl)) {
 			ADDRINT bbl_addr = BBL_Address(bbl);
 			size_t bbl_size = BBL_Size(bbl);
-			
-			// print code cache
-			if (isMainTrace && !IS_MAIN_IMG(bbl_addr)) {}
-			else {
+						
+			bool is_trace = false;
+			if (IS_MAIN_IMG(bbl_addr)) is_trace = true;
+			else if (!GetModuleInfo(bbl_addr)) is_trace = true;
+			else if (isDLLTrace) is_trace = true;
+
+			if (is_trace) {
 				PIN_SafeCopy(buf, (VOID*)bbl_addr, bbl_size);
 				stringstream ss;								
 				ss << "C " << toHex(bbl_addr) << ' ';
@@ -908,9 +928,14 @@ void TRC_Load(TRACE trc, void* v)
 	if (isBlockTrace) {
 		for (BBL bbl = TRACE_BblHead(trc); BBL_Valid(bbl); bbl = BBL_Next(bbl)) {
 			ADDRINT bbl_addr = BBL_Address(bbl);
-			size_t bbl_size = BBL_Size(bbl);			
-			if (isMainTrace && !IS_MAIN_IMG(bbl_addr)) {}
-			else {
+			size_t bbl_size = BBL_Size(bbl);
+
+			bool is_trace = false;
+			if (IS_MAIN_IMG(bbl_addr)) is_trace = true;
+			else if (!GetModuleInfo(bbl_addr)) is_trace = true;
+			else if (isDLLTrace) is_trace = true;
+			
+			if (is_trace) {
 				BBL_InsertCall(bbl, IPOINT_BEFORE, (AFUNPTR)BBL_CodeExecuted,
 					IARG_CONTEXT, 
 					IARG_ADDRINT, bbl_addr,
@@ -923,9 +948,11 @@ void TRC_Load(TRACE trc, void* v)
 	if (isStringTrace) {
 		for (BBL bbl = TRACE_BblHead(trc); BBL_Valid(bbl); bbl = BBL_Next(bbl)) {
 			ADDRINT bbl_addr = BBL_Address(bbl);
-			size_t bbl_size = BBL_Size(bbl);
-			if (isMainTrace && !IS_MAIN_IMG(bbl_addr)) {}
-			else {
+			size_t bbl_size = BBL_Size(bbl); bool is_trace = false;
+			if (IS_MAIN_IMG(bbl_addr)) is_trace = true;
+			else if (!GetModuleInfo(bbl_addr)) is_trace = true;
+			else if (isDLLTrace) is_trace = true;
+			if (is_trace) {
 				INS ins = BBL_InsTail(bbl);
 				INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)BBL_String,
 					IARG_CONTEXT,
@@ -1085,32 +1112,11 @@ void BBL_Count(ADDRINT addr, ADDRINT bbl_size, ADDRINT num_ins, THREADID tid)
 }
 
 void BBL_CodeExecuted(CONTEXT* ctxt, ADDRINT addr, THREADID tid)
-{	
-	if (isMainTrace && !IS_MAIN_IMG(addr)) return;
+{		
 	if (!isTrcOn) return;
 	PIN_GetLock(&lock, tid + 1);
 	*fout << "B " << tid << ' ' << toHex(addr) << endl;
-	PIN_ReleaseLock(&lock);
-	
-	//auto mod = GetModuleInfo(addr);	
-	//if (mod != NULL) {
-	//	auto fn = GetFunctionInfo(addr);
-	//	if (fn != NULL) {
-	//		PIN_GetLock(&lock, tid + 1);
-	//		*fout << "B " << tid << ' ' << mod->name << ' ' << fn->name << ' ' << toHex(addr - fn->saddr) << endl;
-	//		PIN_ReleaseLock(&lock);
-	//	}
-	//	else {
-	//		PIN_GetLock(&lock, tid + 1);
-	//		*fout << "B " << tid << ' ' << mod->name << ' ' << toHex(addr - mod->saddr) << endl;
-	//		PIN_ReleaseLock(&lock);
-	//	}
-	//}
-	//else {
-	//	PIN_GetLock(&lock, tid + 1);
-	//	*fout << "B " << tid << ' ' << toHex(addr) << endl;
-	//	PIN_ReleaseLock(&lock);
-	//}	
+	PIN_ReleaseLock(&lock);	
 }
 
 
@@ -1173,9 +1179,7 @@ bool get_wstring(ADDRINT addr, wstring& res, THREADID tid) {
 
 void BBL_String(CONTEXT* ctxt, ADDRINT addr, THREADID tid)
 {
-	if (isMainTrace && !IS_MAIN_IMG(addr)) return;
 	if (!isTrcOn) return;	
-	
 
 	auto rsp = PIN_GetContextReg(ctxt, REG_STACK_PTR);
 	PIN_SafeCopy(buf, (VOID*)rsp, ADDRSIZE);
@@ -1297,15 +1301,12 @@ void INS_PT_WriteExecute(ADDRINT addr)
 	set_mwblock(addr);
 }
 
-
 string current_api = "";
 void TRC_APIOutput_Handler(CONTEXT* ctxt, ADDRINT addr, THREADID tid)
 {
 	ADDRINT prevaddr = thr_prev_addr[tid];
 	thr_prev_addr[tid] = addr;
 	
-	// *fout << toHex(prevaddr) << ' ' << toHex(addr) << endl;
-
 	FunctionInfo* fn_info = GetFunctionInfo(addr);
 	if (fn_info == NULL) {
 		REG_AH;
@@ -1317,101 +1318,108 @@ void TRC_APIOutput_Handler(CONTEXT* ctxt, ADDRINT addr, THREADID tid)
 		current_api = "";
 		return;
 	}
-	// if (fn_info->saddr != addr) return;
-	// *fout << toHex(prevaddr) << "->" << toHex(addr) << ' ' << fn_info->name << endl;
-
-	if (isMainAPITrace) {
-		if (IS_MAIN_IMG(prevaddr)) {
-			auto& fn_name = fn_info->name;
-			current_api = fn_name;
-			PIN_GetLock(&lock, tid + 1);
-			*fout << "API " << tid << ' ' << fn_name;
+	
+	
+	if (IS_MAIN_IMG(prevaddr) || !IS_MAIN_IMG(prevaddr) && !GetModuleInfo(addr)) {
+		auto& fn_name = fn_info->name;
+		current_api = fn_name;
+		PIN_GetLock(&lock, tid + 1);
+		*fout << "API " << tid << ' ' << fn_name;
+		
 #if TARGET_IA32E
 
-			if (fn_name == "VirtualProtect") {
-				auto rcx = PIN_GetContextReg(ctxt, REG_RCX);
-				auto rdx = PIN_GetContextReg(ctxt, REG_RDX);
-				auto r8 = PIN_GetContextReg(ctxt, REG_R8);
-				auto r9 = PIN_GetContextReg(ctxt, REG_R9);
-				*fout << "(lpAddress=" << toHex(rcx);
-				*fout << ", dwSize=" << toHex(rdx);
-				*fout << ", flNewProtect=" << toHex(r8);
-				*fout << ", lpflOldProtect=" << toHex(r9) << ")"; 
-				if (rcx == 0x0000000140158e70) {
-					isTrcOn = true;
-				}
+		if (fn_name == "VirtualProtect") {
+			auto rcx = PIN_GetContextReg(ctxt, REG_RCX);
+			auto rdx = PIN_GetContextReg(ctxt, REG_RDX);
+			auto r8 = PIN_GetContextReg(ctxt, REG_R8);
+			auto r9 = PIN_GetContextReg(ctxt, REG_R9);
+			*fout << "(lpAddress=" << toHex(rcx);
+			*fout << ", dwSize=" << toHex(rdx);
+			*fout << ", flNewProtect=" << toHex(r8);
+			*fout << ", lpflOldProtect=" << toHex(r9) << ")"; 
+			if (rcx == 0x0000000140158e70) {
+				isTrcOn = true;
 			}
-
-			if (fn_name.find("MessageBox") != string::npos) {
-				auto rdx = PIN_GetContextReg(ctxt, REG_RDX);
-				auto r8 = PIN_GetContextReg(ctxt, REG_R8);
-				*fout << ' ' << toHex(rdx) << ' ' << toHex(r8) << ' ';
-				
-				string pText, pCaption;
-				if (fn_name == "MessageBoxW") {
-					wstring pwText, pwCaption;
-					if (!get_wstring(rdx, pwText, tid)) {
-						*fout << "\nfailed to get wstring at rdx\n";
-					}
-					if (!get_wstring(r8, pwCaption, tid)) {
-						*fout << "\nfailed to get wstring at r8\n";
-					}
-					pText.assign(pwText.begin(), pwText.end());
-					pCaption.assign(pwCaption.begin(), pwCaption.end());					
-				}	
-				else if (fn_name == "MessageBoxA") {					
-					get_string(rdx, pText, tid);
-					get_string(r8, pCaption, tid);					
-				}				
-				*fout << ' ' << pText << ' ' << pCaption;
-			}
-#endif
-			* fout << endl;
-			PIN_ReleaseLock(&lock);
-			if (fn_name == trc_start_api) {
-				isIntenalVMLog = true;
-			}
-
-			if (fn_name == trc_end_api) {
-				PIN_ExitProcess(0);
-			}
-
-			// trace start apis check
-			if (!isTrcOn) {				
-				auto &sidx = thr_start_apis_index[tid];
-				if (sidx < trc_start_apis_sz) {
-					if (trc_start_apis[sidx] == fn_name) {
-						sidx++;
-						if (sidx == trc_start_apis_sz) {
-							isTrcOn = true;
-						}
-					}
-					else {
-						sidx = 0;
-					}
-				}				
-			}			
-			else {
-				// trace start apis and end apis check
-				auto &eidx = thr_end_apis_index[tid];
-				if (eidx < trc_end_apis_sz) {
-					if (trc_end_apis[eidx] == fn_name) {
-						eidx++;
-						if (eidx == trc_end_apis_sz) {
-							isTrcOn = false;
-							fout->flush();
-							PIN_ExitProcess(0);
-						}
-					}
-				}
-				
-			}
-
 		}
+
+		if (fn_name.find("MessageBox") != string::npos) {
+			auto rdx = PIN_GetContextReg(ctxt, REG_RDX);
+			auto r8 = PIN_GetContextReg(ctxt, REG_R8);
+			*fout << ' ' << toHex(rdx) << ' ' << toHex(r8) << ' ';
+				
+			string pText, pCaption;
+			if (fn_name == "MessageBoxW") {
+				wstring pwText, pwCaption;
+				if (!get_wstring(rdx, pwText, tid)) {
+					*fout << "\nfailed to get wstring at rdx\n";
+				}
+				if (!get_wstring(r8, pwCaption, tid)) {
+					*fout << "\nfailed to get wstring at r8\n";
+				}
+				pText.assign(pwText.begin(), pwText.end());
+				pCaption.assign(pwCaption.begin(), pwCaption.end());					
+			}	
+			else if (fn_name == "MessageBoxA") {					
+				get_string(rdx, pText, tid);
+				get_string(r8, pCaption, tid);					
+			}				
+			*fout << ' ' << pText << ' ' << pCaption;
+		}
+#endif
+		* fout << endl;
+		PIN_ReleaseLock(&lock);
+		if (fn_name == trc_start_api) {
+			isInternalVMLog = true;
+		}
+
+		if (fn_name == trc_end_api) {
+			PIN_ExitProcess(0);
+		}
+
+		// trace start apis check
+		if (!isTrcOn) {				
+
+			// debug:
+			if (fn_name == "RtlAllocateHeap") {
+				static int cnt = 0;
+				cnt++;
+				*fout << fn_name << ' ' << cnt << endl;
+				if (cnt == 12) isTrcOn = true;
+			}
+
+			auto &sidx = thr_start_apis_index[tid];
+			if (sidx < trc_start_apis_sz) {
+				if (trc_start_apis[sidx] == fn_name) {										
+					thr_start_apis_index[tid]++;
+					if (sidx + 1 == trc_start_apis_sz) {
+						isTrcOn = true;
+					}
+				}
+				else {					
+					thr_start_apis_index[tid] = 0;
+				}
+			}				
+		}			
+		else {
+			// trace start apis and end apis check
+			auto &eidx = thr_end_apis_index[tid];
+			if (eidx < trc_end_apis_sz) {
+				if (trc_end_apis[eidx] == fn_name) {
+					eidx++;
+					if (eidx == trc_end_apis_sz) {
+						isTrcOn = false;
+						fout->flush();
+						PIN_ExitProcess(0);
+					}
+				}
+			}
+				
+		}
+
 	}
-	if (isAPITrace) {
-		if (fn_info->saddr == addr) *fout << "# tid:" << tid << ' ' << toHex(prevaddr) << ' ' << GetAddrInfo(prevaddr) << " -> " << toHex(addr) << ' ' << GetAddrInfo(addr) << endl;
-	}
+	
+	// if (fn_info->saddr == addr) *fout << "# tid:" << tid << ' ' << toHex(prevaddr) << ' ' << GetAddrInfo(prevaddr) << " -> " << toHex(addr) << ' ' << GetAddrInfo(addr) << endl;
+
 }
 
 void INS_Hook(CONTEXT* ctxt, ADDRINT addr, THREADID tid)
@@ -1477,7 +1485,7 @@ void BBL_Skip_ExeptionHandler(CONTEXT* ctxt, ADDRINT addr, ADDRINT toaddr, THREA
 	rsp = PIN_GetContextReg(ctxt, REG_STACK_PTR);
 	PIN_SafeCopy(buf, (VOID*)rsp, ADDRSIZE);
 	stktop = TO_ADDRINT(buf);
-	*fout << "EFLAGS:" << toHex(stktop) << endl;
+	*fout << tid << " EFLAGS:" << toHex(stktop) << endl;
 
 	// get trap flag and if TF==0, do not skip
 	if ((stktop & 0x100) == 0) return;
@@ -1490,6 +1498,58 @@ void BBL_Skip_ExeptionHandler(CONTEXT* ctxt, ADDRINT addr, ADDRINT toaddr, THREA
 	PIN_SetContextReg(ctxt, REG_INST_PTR, toaddr);
 	PIN_ExecuteAt(ctxt);
 }
+
+void BBL_Skip_X86_64_Mode_Change(CONTEXT* ctxt, ADDRINT addr, THREADID tid) {
+	// Check [esp] and [esp+4]
+	ADDRINT rsp, top, next;
+	rsp = PIN_GetContextReg(ctxt, REG_STACK_PTR);
+	PIN_SafeCopy(buf, (VOID*)rsp, ADDRSIZE);
+	top = TO_ADDRINT(buf);
+	PIN_SafeCopy(buf, (VOID*)(rsp + ADDRSIZE), ADDRSIZE);
+	next = TO_ADDRINT(buf);
+	*fout << "[esp]:" << toHex(top) << endl;
+	*fout << "[esp+4]:" << toHex(next) << endl;
+
+	if (top != addr || next != 0x33) {
+		*fout << "# No Mode Change" << endl;
+		return;
+	}
+
+	// disassemble 0x60 bytes and search for 'ret far' instruction	
+	ADDRINT ea = addr + 5;
+	string asmstr;
+	size_t len; 
+	bool found = false;
+	while (ea < addr + 0x60) {
+		len = get_disasm64(ea, asmstr);
+		if (len == 0) {
+			*fout << "# No Mode Change - disassembly error" << endl;
+			return;
+		}
+		*fout << toHex(ea) << ' ' << asmstr << endl;
+		if (asmstr == "ret far ") {
+			found = true;
+			break;
+		}
+		ea += len;
+	}
+
+	if (found) {
+		// modify esp and eip
+		*fout << "# Skipping Mode Change" << endl;
+		PIN_SetContextReg(ctxt, REG_STACK_PTR, rsp + ADDRSIZE + ADDRSIZE);
+		PIN_SetContextReg(ctxt, REG_INST_PTR, ea + len);
+		PIN_ExecuteAt(ctxt);
+
+		return;
+	}
+	
+	*fout << "# No Mode Change" << endl;
+	return;
+
+
+}
+
 
 void INS_HandlerExit_Handler(ADDRINT addr, THREADID tid)
 {
@@ -1875,12 +1935,8 @@ int main(int argc, char* argv[])
 	isWriteExecute = get_config_bool("trace_write_execute");
 	isPrintBasicBlockHex = get_config_bool("trace_basic_block_hex");
 	isBlockTrace = get_config_bool("trace_basic_block");
-	isBlockTracePT = get_config_bool("trace_basic_block_pt");
-	isMainTrace = get_config_bool("trace_main");
-
-	isAPITrace = get_config_bool("trace_api");
-	isMainAPITrace = get_config_bool("trace_api_main_image");
-
+	isBlockTracePT = get_config_bool("trace_basic_block_pt");	
+	isDLLTrace = get_config_bool("trace_dll");	
 	isStringTrace = get_config_bool("trace_string");
 
 	isDumpCode = get_config_bool("dump_code");
@@ -1890,7 +1946,6 @@ int main(int argc, char* argv[])
 	string end_apis = get_config_str("trace_end_api_sequence");
 	trc_start_api = get_config_str("trace_start_api");
 	trc_end_api = get_config_str("trace_end_api");
-	is_trc_start_option = get_config_bool("trace_start_option");
 
 	isAntiAntiPin = get_config_bool("anti_anti_dbi");
 	isAntiAntiVM = get_config_bool("anti_anti_vm");
@@ -1898,7 +1953,7 @@ int main(int argc, char* argv[])
 
 	// tracing start when trc_end_api exists and trc_start_api not exists
 	if (trc_end_api != "" && trc_start_api == "") {
-		isIntenalVMLog = true;
+		isInternalVMLog = true;
 	}
 
 	// api sequence where logging api starts and ends
@@ -1913,11 +1968,8 @@ int main(int argc, char* argv[])
 		}		
 		trc_start_apis_sz = trc_start_apis.size();
 	}
-	else {
-		if (!is_trc_start_option) {
-			isTrcOn = true;
-		}
-		
+	else {		
+		// isTrcOn = true;
 	}
 	if (end_apis != "") {
 		for (size_t pos = 0, next_pos;;)
@@ -1939,8 +1991,6 @@ int main(int argc, char* argv[])
 		isVMAnalysis = true;
 	}
 	vmsec_name = get_config_str("vmp_section");
-
-	SetAddress0x(false);
 
 	PIN_InitSymbols();
 

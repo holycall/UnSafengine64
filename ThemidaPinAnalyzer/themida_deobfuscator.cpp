@@ -7,6 +7,9 @@ namespace NW {
 #include "ucrtdll.h"
 #include "external_function_reader.h"
 
+#include "dbgsymbol_helper.h"
+
+
 enum class InsType {
 	kOTHER,
 	kRET,
@@ -866,7 +869,24 @@ bool FindIATAtSecondSection() {
 		}
 
 		auto fn = GetFunctionInfo(iat_data);
-		if (iat_data == 0 || fn == NULL) {
+		
+
+		//if ((iat_addr & 0xffff) == 0x30c8) {
+		//	*fout << "HERE " << toHex(iat_addr) << ' ' << toHex(iat_data) << ' ' << ((fn == NULL)? "No FN":fn->name) << endl;		
+		//	*fout << "Symbol from Dbg Data " << GetDbgSymbol(iat_data) << endl;
+		//}
+		
+		if (iat_data != 0 && fn == NULL) {
+			ModuleInformation* mod = GetModuleInfo(iat_data);
+			if (mod != NULL) {
+				string symb = GetDbgSymbol(mod->name, mod->saddr, mod->eaddr, iat_data);
+				*fout << "Symbol from Dbg Data " << toHex(iat_addr) << ' ' << toHex(iat_data) << ' ' << symb << ' ' << mod->name << endl;
+				iat_elem_by_addr[iat_addr] = { iat_addr, iat_data, symb, mod->name };
+			}
+		}
+
+
+		else if (iat_data == 0 || fn == NULL) {
 			iat_elem_by_addr[iat_addr] = { iat_addr, 0, "", "" };				
 			*fout << "# " << toHex(iat_addr) << ' ' << toHex(iat_data) << endl;
 
@@ -975,17 +995,24 @@ bool FindIAT()
 
 			auto fn = GetFunctionInfo(iat_data);
 			if (fn == NULL) {
-				DLOG(LogType::kLOG_IAT_SEARCH, "# NO FUNCTION\n");
-				continue;
+				*fout << toHex(iat_data) << endl;
+				string symb = GetDbgSymbol(mod->name, mod->saddr, mod->eaddr, iat_data);
+				if (symb == "") {
+					DLOG(LogType::kLOG_IAT_SEARCH, "# NO FUNCTION\n");
+					continue;
+				}
+				
+				*fout << "Symbol from Dbg Data " << toHex(iat_addr) << ' ' << toHex(iat_data) << ' ' << symb << ' ' << mod->name << endl;
+				iat_elem_by_addr[iat_addr] = { iat_addr, iat_data, symb, mod->name };									
 			}
 			else {
 				*fout << fn->module_name << ' ' << fn->name << endl;
+				auto mf = ResolveForwardedFunc(fn->module_name, fn->name);
+				fn->name = mf.fn;
+				fn->module_name = mf.dll;
+				iat_elem_by_addr[iat_addr] = { iat_addr, fn->saddr, fn->name, fn->module_name };
 			}
 
-			auto mf = ResolveForwardedFunc(fn->module_name, fn->name);
-			fn->name = mf.fn;
-			fn->module_name = mf.dll;
-			iat_elem_by_addr[iat_addr] = { iat_addr, fn->saddr, fn->name, fn->module_name };
 		}
 
 		if (num_imp_fn > 3) {	// assumption: at least 3 import function
@@ -1166,6 +1193,10 @@ void PrintIATArea()
 
 
 
+///////////////////////////////////////////////////////////////////////////////////////////////////////
+// Analysis Routines
+///////////////////////////////////////////////////////////////////////////////////////////////////////
+
 // API Detect executable trace analysis function
 void Analysis_TRC_OEP(CONTEXT* ctxt, ADDRINT addr, bool is_ret, THREADID threadid)
 {
@@ -1245,9 +1276,10 @@ void Analysis_TRC_OEP(CONTEXT* ctxt, ADDRINT addr, bool is_ret, THREADID threadi
 // thread control
 void Analysis_Thread(THREADID threadid) {
 	if (threadid != 0) {
-		*fout << "thread: " << threadid << " exit" << endl;
+		*fout << "thread: " << threadid << " suspend" << endl;
 		fout->flush();
-		PIN_ExitThread(0);
+		PIN_Sleep(0);
+		// PIN_ExitThread(0);
 	}
 }
 
@@ -1263,6 +1295,9 @@ void ToNextObfCall(CONTEXT* ctxt) {
 		SaveRegisters(ctxt);
 		is_register_saved = true;
 	}
+	// Date: 23. 5. 12. 
+	// clear gax first due to GAX-based API recovery			
+	PIN_SetContextReg(ctxt, REG_GAX, 0);
 
 	ADDRINT next_addr;
 
@@ -1289,11 +1324,11 @@ void ToNextObfCall(CONTEXT* ctxt) {
 	else if (curr_obf_iat_pos < obf_iat_elems.size()) {
 		DLOG(LogType::kLOG_CALL_CHECK, "IAT-" << curr_obf_iat_pos << '/' << obf_iat_elems.size() << endl);
 		curr_obf_iat_elem = &obf_iat_elems.at(curr_obf_iat_pos++);
-		curr_obf_call = NULL;
-		next_addr = curr_obf_iat_elem->dst;
+		curr_obf_call = NULL;		
+		next_addr = curr_obf_iat_elem->dst;		
 		DLOG(LogType::kLOG_CALL_CHECK, "Checking Obfuscated IAT Element: " <<
 			toHex(curr_obf_iat_elem->src) << " -> " << toHex(next_addr) <<
-			" (" << curr_obf_iat_pos << '/' << obf_iat_elems.size() << ")\n");
+			" (" << curr_obf_iat_pos << '/' << obf_iat_elems.size() << ")\n");		
 	}
 	else {
 		// when checking obfuscated call finished, prepare the end 				
@@ -1307,12 +1342,15 @@ void ToNextObfCall(CONTEXT* ctxt) {
 	register_to_value_API_function_name.clear();
 
 	run_until_api_function_status = RunUntilAPIFunctionStatus::kCheckCurrentFunction;
-
+	
 	// testing call instruction
-	if (curr_obf_call->ins_type == ObfuscatedCallType::kINDIRECT_CALL) {
-		// jump to the call destination
+	if (curr_obf_call != NULL && curr_obf_call->ins_type == ObfuscatedCallType::kINDIRECT_CALL) {
+		// jump to the call destination		
+		fout->flush();
 		ADDRINT dst = curr_obf_call->dst;
 		ADDRINT ret_addr = curr_obf_call->src + 5;
+		
+		fout->flush();
 
 		// push return address and go to the target address
 		ADDRINT stktop = PIN_GetContextReg(ctxt, REG_STACK_PTR) + ADDRSIZE;
@@ -1323,7 +1361,7 @@ void ToNextObfCall(CONTEXT* ctxt) {
 			PIN_SetContextReg(ctxt, REG_STACK_PTR, stktop);
 			*((ADDRINT*)stktop) = ret_addr;
 			PIN_SetContextReg(ctxt, REG_INST_PTR, dst);
-			PIN_ExecuteAt(ctxt);
+			PIN_ExecuteAt(ctxt);		
 		}
 
 	}
@@ -1333,8 +1371,7 @@ void ToNextObfCall(CONTEXT* ctxt) {
 
 
 // run until api
-int DoRunUntilAPI(CONTEXT *ctxt, ADDRINT addr, bool is_ret) {
-
+int DoRunUntilAPI(CONTEXT *ctxt, ADDRINT addr, bool is_ret) {	
 	if (run_until_api_function_status == RunUntilAPIFunctionStatus::kCheckCurrentFunction) {
 		// if obfuscated API checking is started and 
 		// if the trace is in another section
@@ -1354,8 +1391,10 @@ int DoRunUntilAPI(CONTEXT *ctxt, ADDRINT addr, bool is_ret) {
 		//   mov_obf_addr  :  ...
 		//                    ... (the effect of obfuscated code is equivalent to MOV REG, api_fn )
 		//                    ret xx		
+
 		ADDRINT stkptr = PIN_GetContextReg(ctxt, REG_STACK_PTR);
-		ADDRINT stk_top_val = *((ADDRINT*)stkptr);
+		ADDRINT stk_top_val;
+		size_t copied_num = PIN_SafeCopy(&stk_top_val, reinterpret_cast<unsigned char*>(stkptr), ADDRSIZE);		
 		trace_address_sequence.push_back(addr);
 		trace_stack_pointer_sequence.push_back(stkptr);
 		DLOG(LogType::kLOG_CALL_CHECK, "CheckAPI running " << toHex(addr) << ' ' << GetAddrInfo(addr) << ' ' << trace_address_sequence.size() << endl);
@@ -1364,7 +1403,7 @@ int DoRunUntilAPI(CONTEXT *ctxt, ADDRINT addr, bool is_ret) {
 		FunctionInformation* fninfo;
 
 		// check MOV reg, api_fn		
-		if (addr == curr_obf_call->src + 5 || addr == curr_obf_call->src + 6)
+		if (curr_obf_call && (addr == curr_obf_call->src + 5 || addr == curr_obf_call->src + 6))
 		{
 			// check 'mov reg, [iat:api_function]'
 			REG set_api_reg = GetRegisterAssignedWithAPIFunctionAddress(ctxt);
@@ -1405,20 +1444,37 @@ int DoRunUntilAPI(CONTEXT *ctxt, ADDRINT addr, bool is_ret) {
 			// return 1; // continue;
 		}
 
-		// if the trace in in API function
-		// then the current address or return address is the API function. 		
-		fninfo = GetFunctionInfo(addr);
+		// Date: 23. 5. 12. 
+		// themida 3.19 check
+		// functions in kernel32.dll call Sleep and lstrlen first before the api function call. 
+		// so, I check api function in RAX first. 
+		if (packer_type == "tmd3" && curr_obf_iat_elem) {
+			ADDRINT gax = PIN_GetContextReg(ctxt, REG_GAX);
+			// *fout << "GAX:" << toHex(gax) << endl;
+			fninfo = GetFunctionInfo(gax);
+					
+			if (fninfo != NULL) {
+				*fout << "FN:" << *fninfo << endl;
 
-		if (curr_obf_fn_pos == 13) {
-			*fout << "!! here" << endl;
+				auto mf = ResolveForwardedFunc(fninfo->module_name, fninfo->name);
+				fninfo->name = mf.fn;
+				fninfo->module_name = mf.dll;
+
+				*fout << "# --- " << fninfo->module_name << '\t' << fninfo->name << endl;
+				iat_elem_by_addr[curr_obf_iat_elem->src] = { curr_obf_iat_elem->src, fninfo->saddr, fninfo->name, fninfo->module_name };
+
+				obfaddr2fn[curr_obf_iat_elem->dst] = fninfo;
+
+				ToNextObfCall(ctxt);
+			}			
 		}
 		
-		if (fninfo == NULL) return 0; //  break;
 
-		if (curr_obf_fn_pos == 13) {
-			*fout << "!! here" << endl;
-		}
+		// if the trace in in API function
+		// then the current address or return address is the API function. 		
+		fninfo = GetFunctionInfo(addr);		
 
+		if (fninfo == NULL) return 0; //  break;	
 
 		// skip user exception by false positive find api calls
 		if (fninfo->name.find("KiUserExceptionDispatcher") != string::npos)
@@ -1457,6 +1513,7 @@ int DoRunUntilAPI(CONTEXT *ctxt, ADDRINT addr, bool is_ret) {
 
 				obfaddr2fn[curr_obf_iat_elem->dst] = fninfo;
 			}
+
 			ToNextObfCall(ctxt);			
 			// return 1; // continue;
 		}
@@ -1485,9 +1542,13 @@ void DoFinalize() {
 // API Detect executable trace analysis function
 void Analysis_TRC_API(CONTEXT *ctxt, ADDRINT addr, bool is_ret, THREADID threadid)
 {	
+	static int _trace = 0;
 	if (threadid != 0) {
+		*fout << "thread: " << threadid << " suspend" << endl;
+		fout->flush();
+		PIN_Sleep(0);		
 		return;
-	}
+	}	
 
 	if (oep == 0) return;
 
@@ -1501,7 +1562,8 @@ void Analysis_TRC_API(CONTEXT *ctxt, ADDRINT addr, bool is_ret, THREADID threadi
 			else if (res == 1) continue;
 		}
 
-		else if (run_until_api_function_status == RunUntilAPIFunctionStatus::kCheckNextCall) {
+		else if (run_until_api_function_status == RunUntilAPIFunctionStatus::kCheckNextCall) {		
+			PIN_RemoveInstrumentation();
 			ToNextObfCall(ctxt);
 		}
 
@@ -1523,22 +1585,24 @@ void Instrument_TRC(TRACE trace, void *v)
 	// bool is_ret = INS_IsRet(BBL_InsTail(TRACE_BblHead(trace)));	
 	bool is_ret = INS_IsRet(last_ins);
 
+	static int _trace = 0;
+	if (addr == 0x00007ff7b991c67f) {
+		_trace = 1;
+	}
 
-	if (curr_obf_fn_pos == 13) {
-		*fout << "!! " << toHex(addr) << endl;
-		BBL bbl;
-		INS ins;
-		for (bbl = TRACE_BblHead(trace); BBL_Valid(bbl); bbl = BBL_Next(bbl))
+	if (_trace) {
+		for (auto bbl = TRACE_BblHead(trace); BBL_Valid(bbl); bbl = BBL_Next(bbl))
 		{
-			for (ins = BBL_InsHead(bbl); INS_Valid(ins); ins = INS_Next(ins))
+			*fout << " B " << toHex(BBL_Address(bbl)) << endl;
+			fout->flush();
+			for (auto ins = BBL_InsHead(bbl); INS_Valid(ins); ins = INS_Next(ins))
 			{
-
-				INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)Analysis_INS_LOG,
-					IARG_CONTEXT,
+				*fout << " I " << toHex(INS_Address(ins)) << ' ' << INS_Disassemble(ins) << endl;
+				fout->flush();
+				INS_InsertPredicatedCall(
+					ins, IPOINT_BEFORE, (AFUNPTR)Analysis_INS,
 					IARG_INST_PTR,
-					IARG_THREAD_ID,
 					IARG_END);
-				
 			}
 		}
 	}
@@ -1565,34 +1629,45 @@ void Instrument_TRC(TRACE trace, void *v)
 
 		}
 		else {
+
+			//for (BBL bbl = TRACE_BblHead(trace); BBL_Valid(bbl); bbl = BBL_Next(bbl)) {
+			//	for (INS ins = BBL_InsHead(bbl); INS_Valid(ins); ins = INS_Next(ins)) {
+			//		*fout << toHex(INS_Address(ins)) << ' ' << INS_Disassemble(ins) << endl;
+			//	}
+			//}
+			//
+
+			*fout << "TRACE " << toHex(addr) << endl;
+
 			TRACE_InsertCall(trace, IPOINT_BEFORE, (AFUNPTR)Analysis_TRC_API,
 				IARG_CONTEXT,
 				IARG_ADDRINT, addr,
 				IARG_BOOL, is_ret,
 				IARG_THREAD_ID,
-				IARG_END);
+				IARG_END);	
+
 		}
-		
-		if (curr_obf_fn_pos == 13) {
-			BBL bbl;
-			INS ins;
-			for (bbl = TRACE_BblHead(trace); BBL_Valid(bbl); bbl = BBL_Next(bbl))
-			{
-				for (ins = BBL_InsHead(bbl); INS_Valid(ins); ins = INS_Next(ins))
-				{
-					*fout << " I " << toHex(INS_Address(ins)) << ' ' << INS_Disassemble(ins) << endl;
-					InsType it = InsType::kOTHER;
-					if (INS_Mnemonic(ins) == "POPFD" || INS_Mnemonic(ins) == "POPFQ") {
-						it = InsType::kPOPF;
-						*fout << "# POPF @ " << toHex(addr) << ' ' << INS_Disassemble(ins) << endl;
-					}
-					else if (INS_Mnemonic(ins) == "RET" || INS_Mnemonic(ins) == "RET_NEAR") {
-						it = InsType::kRET;
-						*fout << "# RET @ " << toHex(addr) << ' ' << INS_Disassemble(ins) << endl;
-					}
-				}
-			}
-		}
+		//
+		//if (curr_obf_fn_pos == 13) {
+		//	BBL bbl;
+		//	INS ins;
+		//	for (bbl = TRACE_BblHead(trace); BBL_Valid(bbl); bbl = BBL_Next(bbl))
+		//	{
+		//		for (ins = BBL_InsHead(bbl); INS_Valid(ins); ins = INS_Next(ins))
+		//		{
+		//			*fout << " I " << toHex(INS_Address(ins)) << ' ' << INS_Disassemble(ins) << endl;
+		//			InsType it = InsType::kOTHER;
+		//			if (INS_Mnemonic(ins) == "POPFD" || INS_Mnemonic(ins) == "POPFQ") {
+		//				it = InsType::kPOPF;
+		//				*fout << "# POPF @ " << toHex(addr) << ' ' << INS_Disassemble(ins) << endl;
+		//			}
+		//			else if (INS_Mnemonic(ins) == "RET" || INS_Mnemonic(ins) == "RET_NEAR") {
+		//				it = InsType::kRET;
+		//				*fout << "# RET @ " << toHex(addr) << ' ' << INS_Disassemble(ins) << endl;
+		//			}
+		//		}
+		//	}
+		//}
 		
 	}
 
@@ -1709,7 +1784,9 @@ void Instrument_TRC(TRACE trace, void *v)
 		}
 	}	
 
-	if (run_until_api_function_status == RunUntilAPIFunctionStatus::kCheckCurrentFunction && INS_IsCall(last_ins)) {
+	// Date: 23. 5. 12. 
+	// This is ad-hoc method. I need to verify this code. 
+	if (run_until_api_function_status == RunUntilAPIFunctionStatus::kCheckCurrentFunction && INS_IsCall(last_ins) && packer_type != "tmd3") {
 		string asmcode = INS_Disassemble(last_ins);
 		// *fout << asmcode << endl;
 		auto pos = asmcode.rfind(' ');
@@ -1717,7 +1794,7 @@ void Instrument_TRC(TRACE trace, void *v)
 			istringstream ss(&asmcode[pos + 3]);
 			ADDRINT tgt;
 			ss >> hex >> tgt;
-			// *fout << toHex(tgt) << endl;
+			*fout << toHex(tgt) << endl;
 			auto info = GetModuleInfo(tgt);
 			if (info == NULL) {
 				*fout << "skip" << endl;
@@ -1850,8 +1927,21 @@ void Analysis_INS_API(CONTEXT* ctxt, ADDRINT addr, ADDRINT it, THREADID tid)
 
 void Analysis_INS_LOG(CONTEXT* ctxt, ADDRINT addr, THREADID tid)
 {
-	*fout << "# Analysis_INS_LOG " <<toHex(tid) << ' ' << toHex(addr) << endl;
-
+	*fout << "# Analysis_INS_LOG " << toHex(tid) << ' ' << toHex(addr) << endl;
+	string disasm = "";	
+	size_t sz = get_disasm(addr, disasm);
+	if (sz != 5) return;
+	UINT8 opcode = *((UINT8*)addr);
+	if (opcode != 0xe9) return;
+	ADDRINT next = addr + sz;		
+	INT64 diff = (INT64)*((INT32*)(addr + 1));
+	*fout << "# DIFF: " << toHex(diff) << endl;
+	ADDRINT dst = next + diff;
+	*fout << "# JMP DEST: " << toHex(dst) << endl;
+	*fout << disasm << endl;
+	fout->flush();
+	PIN_SetContextReg(ctxt, REG_INST_PTR, dst);	
+	PIN_ExecuteAt(ctxt);
 }
 
 
@@ -1880,7 +1970,7 @@ void FixMemoryProtection()
 
 		rc = OS_ProtectMemory(pid, 
 			(VOID*)sec->saddr, 
-			sec->eaddr - sec->saddr, 
+			sec->eaddr - sec->saddr, OS_PAGE_PROTECTION_TYPE_EXECUTE | 
 			OS_PAGE_PROTECTION_TYPE_READ | OS_PAGE_PROTECTION_TYPE_WRITE);
 		*fout << "# OS Return Code of ProtectMemory " << rc.generic_err << endl;;
 	}
@@ -2150,7 +2240,7 @@ void* MakeImportSection(UINT32* size, UINT32 *idt_size, UINT32 vloc)
 		// if zero bytes are repeated, there are some missed functions				
 		if (func_addr == 0 || prev_dll_name != "" && dll_name != "" && prev_dll_name != dll_name) {						
 			// Write DLL Names in Image Import Names Table		
-			DLOG(LogType::kLOG_DUMP, "DLL Name: " << prev_dll_name << ' ' << i << endl);
+			DLOG(LogType::kLOG_DUMP, "DLL Name: \"" << prev_dll_name << "\" " << i << endl);
 			if (prev_dll_name.length() > 0) {
 				PutXWORD(ilt, 0);
 				ilt += ADDRSIZE;
@@ -2574,7 +2664,7 @@ void DumpUnpackedFile()
 	if (!fdata_imp) {
 		return;
 	}
-
+	
 	vsize_imp = Align(vsize_imp, nt0->OptionalHeader.SectionAlignment);
 	UINT32 fsize_imp = Align(vsize_imp, nt0->OptionalHeader.FileAlignment);
 
@@ -2593,7 +2683,6 @@ void DumpUnpackedFile()
 	auto last_iat_element_addr = (*iat_elem_by_addr.rbegin()).first;
 	nt0->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_IAT].VirtualAddress = (UINT32)(first_iat_element_addr - main_image_start_address);
 	nt0->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_IAT].Size = (UINT32)(last_iat_element_addr - first_iat_element_addr + ADDRSIZE);
-
 
 	// ----------------------------------------------------------------------------------------------------
 	floc = floc + fsize_imp;
@@ -2636,7 +2725,7 @@ void DumpUnpackedFile()
 	free(hdr);
 	free(fdata_imp);
 
-	fclose(fp);	
+	fclose(fp);		
 }
 
 /// =====================
@@ -2806,14 +2895,20 @@ void Analysis_INS_MR(ADDRINT targetAddr)
 	DLOG(LogType::kLOG_MEMORY_ACCESS, "API Read: " << toHex(targetAddr) << ' ' << *current_obf_fn << endl);
 }
 
+// debug
+void Analysis_INS(ADDRINT addr) {
+	*fout << "I " << toHex(addr) << endl;
+	fout->flush();
+}
 
 // ========================================================================================================================
 // Common Callbacks
 // ========================================================================================================================
 
-// IMG instrumentation function for EXE files
+// IMG instrumentation function for EXE&DLL files
 void Instrument_IMG(IMG img, void *v)
 {
+
 	// Trim image name
 	string imgname = IMG_Name(img);
 	size_t pos = imgname.rfind("\\") + 1;
@@ -2913,7 +3008,7 @@ void Instrument_IMG(IMG img, void *v)
 	}
 	
 	*fout << "IMG:" << *modinfo << endl;
-	
+
 	// Record each section and function data
 	size_t cnt = 0;
 	for (SEC sec = IMG_SecHead(img); SEC_Valid(sec); sec = SEC_Next(sec), cnt++)
@@ -2989,6 +3084,7 @@ void Instrument_IMG(IMG img, void *v)
 // This routine is executed every time a thread is created.
 VOID ThreadStart(THREADID threadid, CONTEXT *ctxt, INT32 flags, VOID *v)
 {
+	*fout << "Thread started " << threadid << endl;
 	thr_cnt++;
 	DLOG(LogType::kLOG_THREAD, "Starting Thread " << threadid << endl);
 	thread_ids.insert(threadid);
@@ -3034,13 +3130,16 @@ VOID UnpackThread(VOID* arg)
 		LOG(msg_hdr + "Waiting until OEP.\n");
 		PIN_SemaphoreWait(&sem_oep_found);
 	}
-	
 		
 	// Fix Memory Protection for VMProtect 3.x and Themida 3.x
 	if (packer_type == "vmp" && ADDRSIZE == 8 || packer_type == "tmd3") {
 		LOG(msg_hdr + "Resetting Memory Protection\n");
 		FixMemoryProtection();
 	}
+
+	// Date: 23. 5. 16. 
+	// using dbghelp.dll
+	InitDbgHelp();
 
 	if (imp_start_addr == 0) {
 		// Search for IAT area.		
@@ -3350,7 +3449,7 @@ int main(int argc, char* argv[])
 
 	/////////////////////////////////////////////////////////////////////////////////////////////
 	PIN_InitSymbols();
-
+	
 	// Register Analysis routines to be called when a thread begins/ends
 	PIN_AddThreadStartFunction(ThreadStart, 0);
 	PIN_AddThreadFiniFunction(ThreadFini, 0);

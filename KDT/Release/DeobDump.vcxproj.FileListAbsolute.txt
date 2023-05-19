@@ -1,2 +1,0 @@
-C:\pintool\KDT32.exe.lastcodeanalysissucceeded
-C:\Dev\PinAnalyzer\DeobDump\Release\NativeCodeAnalysis.read.1.tlog

@@ -1,10 +1,10 @@
 #include "internal_vm_analysis.h"
 
-bool isIntenalVMLog = false;
+bool isInternalVMLog = false;
 
 void INS_InternalVMAnalysis(ADDRINT addr, BOOL is_indirect_branch, THREADID tid)
 {
-	if (!isIntenalVMLog) return;
+	if (!isInternalVMLog) return;
 	PIN_GetLock(&lock, tid + 1);
 	*fout << "I " << tid << ' ' << toHex(addr) << ' ' << asmcode_m[addr] << endl;
 	if (is_indirect_branch) {
@@ -20,7 +20,7 @@ void BBL_InternalVMAnalysis(ADDRINT addr, THREADID tid)
 
 void INS_InternalVMAnalysis_MR(CONTEXT* ctxt, ADDRINT ip, size_t mSize, ADDRINT targetAddr, THREADID threadid)
 {
-	if (!isIntenalVMLog) return;
+	if (!isInternalVMLog) return;
 
 	// skip stack write
 	if (PIN_GetContextReg(ctxt, REG_STACK_PTR) / 0x1000 == targetAddr / 0x1000) return;

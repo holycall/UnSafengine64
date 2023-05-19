@@ -225,6 +225,7 @@ void ThreadFini(THREADID threadid, const CONTEXT *ctxt, INT32 code, VOID *v);
 
 void Analysis_INS_MW(ADDRINT addr, size_t mSize, ADDRINT targetAddr);
 void Analysis_INS_MR(ADDRINT targetAddr);
+void Analysis_INS(ADDRINT addr);
 
 void Analysis_TRC_OEP(CONTEXT *ctxt, ADDRINT addr, bool is_ret, THREADID threadid);
 void Analysis_TRC_API(CONTEXT* ctxt, ADDRINT addr, bool is_ret, THREADID threadid);

@@ -48,6 +48,8 @@ void TRC_APIOutput_Handler(CONTEXT *ctxt, ADDRINT addr, THREADID tid);
 
 void INS_Hook(CONTEXT* ctxt, ADDRINT addr, THREADID tid);
 void BBL_Skip_ExeptionHandler(CONTEXT* ctxt, ADDRINT addr, ADDRINT toaddr, THREADID tid);
+void BBL_Skip_X86_64_Mode_Change(CONTEXT* ctxt, ADDRINT addr, THREADID tid);
+
 void INS_Fake_CPUID(CONTEXT* ctxt, ADDRINT addr, ADDRINT nextaddr, THREADID tid);
 
 // Memory Trace Instrumentation
@@ -78,6 +80,8 @@ size_t get_meblock(ADDRINT addr);
 
 // PE Header Information
 ADDRINT get_exception_handler_jump_target(ADDRINT ex_va);
+ADDRINT get_x86_64_mod_change_skip_target(ADDRINT push_va);
+
 
 template<typename T>
 constexpr auto IS_MAIN_IMG(T addr) { return (addr >= main_img_saddr && addr < main_img_eaddr); }

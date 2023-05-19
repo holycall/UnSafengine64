@@ -30,36 +30,36 @@
     <ProjectGuid>{639EF517-FCFC-408E-9500-71F0DC0458DB}</ProjectGuid>
     <RootNamespace>ThemidaPinAnalyzer</RootNamespace>
     <Keyword>Win32Proj</Keyword>
-    <WindowsTargetPlatformVersion>10.0.18362.0</WindowsTargetPlatformVersion>
+    <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'" Label="Configuration">
     <ConfigurationType>DynamicLibrary</ConfigurationType>
     <CharacterSet>MultiByte</CharacterSet>
     <WholeProgramOptimization>false</WholeProgramOptimization>
-    <PlatformToolset>v142</PlatformToolset>
+    <PlatformToolset>v143</PlatformToolset>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'" Label="Configuration">
     <ConfigurationType>DynamicLibrary</ConfigurationType>
     <CharacterSet>MultiByte</CharacterSet>
-    <PlatformToolset>v142</PlatformToolset>
+    <PlatformToolset>v143</PlatformToolset>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="Configuration">
     <ConfigurationType>DynamicLibrary</ConfigurationType>
     <CharacterSet>MultiByte</CharacterSet>
     <WholeProgramOptimization>false</WholeProgramOptimization>
-    <PlatformToolset>v142</PlatformToolset>
+    <PlatformToolset>v143</PlatformToolset>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="Configuration">
     <ConfigurationType>DynamicLibrary</ConfigurationType>
     <CharacterSet>MultiByte</CharacterSet>
-    <PlatformToolset>v142</PlatformToolset>
+    <PlatformToolset>v143</PlatformToolset>
   </PropertyGroup>
   <PropertyGroup Label="Configuration" Condition="'$(Configuration)|$(Platform)'=='Test|Win32'">
-    <PlatformToolset>v142</PlatformToolset>
+    <PlatformToolset>v143</PlatformToolset>
   </PropertyGroup>
   <PropertyGroup Label="Configuration" Condition="'$(Configuration)|$(Platform)'=='Test|x64'">
-    <PlatformToolset>v142</PlatformToolset>
+    <PlatformToolset>v143</PlatformToolset>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
   <ImportGroup Label="ExtensionSettings">
@@ -202,8 +202,8 @@
  %(AdditionalOptions)</AdditionalOptions>
       <IntrinsicFunctions>false</IntrinsicFunctions>
       <WholeProgramOptimization>false</WholeProgramOptimization>
-      <AdditionalIncludeDirectories>C:\pin\source\include\pin;C:\pin\source\include\pin\gen;c:\pin\extras\xed-ia32\include\xed;c:\pin\extras\components\include;c:\pin\extras\stlport\include;c:\pin\extras;c:\pin\extras\libstdc++\include;c:\pin\extras\crt\include;c:\pin\extras\crt;c:\pin\extras\crt\include\arch-x86;c:\pin\extras\crt\include\kernel\uapi;c:\pin\extras\crt\include\kernel\uapi\asm-x86</AdditionalIncludeDirectories>
-      <PreprocessorDefinitions>TARGET_IA32;HOST_IA32;TARGET_WINDOWS;__PIN__=1;PIN_CRT=1;__i386__;_WINDOWS_H_PATH_=C:/Program Files (x86)/Windows Kits/10/Include/10.0.18362.0/um;_MEMORY_H_PATH_=C:/Program Files (x86)/Microsoft Visual Studio/2019/Professional/VC/Tools/MSVC/14.27.29110/include</PreprocessorDefinitions>
+      <AdditionalIncludeDirectories>C:\pin3.27\source\include\pin;C:\pin3.27\source\include\pin\gen;c:\pin3.27\extras\xed-ia32\include\xed;c:\pin3.27\extras\components\include;c:\pin3.27\extras\stlport\include;c:\pin3.27\extras;c:\pin3.27\extras\libstdc++\include;c:\pin3.27\extras\crt\include;c:\pin3.27\extras\crt;c:\pin3.27\extras\crt\include\arch-x86;c:\pin3.27\extras\crt\include\kernel\uapi;c:\pin3.27\extras\crt\include\kernel\uapi\asm-x86</AdditionalIncludeDirectories>
+      <PreprocessorDefinitions>TARGET_IA32;HOST_IA32;TARGET_WINDOWS;__PIN__=1;PIN_CRT=1;__i386__;_WINDOWS_H_PATH_=C:/Program Files (x86)/Windows Kits/10/Include/10.0.22000.0/um</PreprocessorDefinitions>
       <MinimalRebuild>false</MinimalRebuild>
       <ExceptionHandling>
       </ExceptionHandling>
@@ -225,8 +225,8 @@
     </ClCompile>
     <Link>
       <AdditionalOptions>/export:main %(AdditionalOptions)</AdditionalOptions>
-      <AdditionalDependencies>pin.lib;xed.lib;pinvm.lib;kernel32.lib;pincrt.lib;ntdll-32.lib;crtbeginS.obj</AdditionalDependencies>
-      <AdditionalLibraryDirectories>C:\pin\ia32\lib;C:\pin\ia32\lib-ext;C:\pin\extras\xed-ia32\lib;C:\pin\ia32\runtime\pincrt;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalDependencies>pin.lib;pinipc.lib;xed.lib;pincrt.lib;kernel32.lib;crtbeginS.obj</AdditionalDependencies>
+      <AdditionalLibraryDirectories>C:\pin3.27\ia32\lib;C:\pin3.27\ia32\lib-ext;C:\pin3.27\extras\xed-ia32\lib;C:\pin3.27\ia32\runtime\pincrt;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <IgnoreAllDefaultLibraries>true</IgnoreAllDefaultLibraries>
       <IgnoreSpecificDefaultLibraries>%(IgnoreSpecificDefaultLibraries)</IgnoreSpecificDefaultLibraries>
       <GenerateDebugInformation>true</GenerateDebugInformation>
@@ -256,8 +256,8 @@
       <AdditionalOptions>/GR- /GS- /EHs- /EHa- /Oi- /FIinclude/msvc_compat.h </AdditionalOptions>
       <IntrinsicFunctions>false</IntrinsicFunctions>
       <WholeProgramOptimization>false</WholeProgramOptimization>
-      <AdditionalIncludeDirectories>C:\pin\source\include\pin;C:\pin\source\include\pin\gen;c:\pin\extras\xed-intel64\include\xed;c:\pin\extras\components\include;c:\pin\extras\stlport\include;c:\pin\extras;c:\pin\extras\libstdc++\include;c:\pin\extras\crt\include;c:\pin\extras\crt;c:\pin\extras\crt\include\arch-x86_64;c:\pin\extras\crt\include\kernel\uapi;c:\pin\extras\crt\include\kernel\uapi\asm-x86</AdditionalIncludeDirectories>
-      <PreprocessorDefinitions>TARGET_IA32E;HOST_IA32E;TARGET_WINDOWS;WIN32;__PIN__=1;PIN_CRT=1;__LP64__;_WINDOWS_H_PATH_=C:/Program Files (x86)/Windows Kits/10/Include/10.0.18362.0/um</PreprocessorDefinitions>
+      <AdditionalIncludeDirectories>C:\pin3.27\source\include\pin;C:\pin3.27\source\include\pin\gen;c:\pin3.27\extras\xed-intel64\include\xed;c:\pin3.27\extras\components\include;c:\pin3.27\extras\stlport\include;c:\pin3.27\extras;c:\pin3.27\extras\libstdc++\include;c:\pin3.27\extras\crt\include;c:\pin3.27\extras\crt;c:\pin3.27\extras\crt\include\arch-x86_64;c:\pin3.27\extras\crt\include\kernel\uapi;c:\pin3.27\extras\crt\include\kernel\uapi\asm-x86</AdditionalIncludeDirectories>
+      <PreprocessorDefinitions>TARGET_IA32E;HOST_IA32E;TARGET_WINDOWS;WIN32;__PIN__=1;PIN_CRT=1;__LP64__;_WINDOWS_H_PATH_=C:/Program Files (x86)/Windows Kits/10/Include/10.0.22000.0/um</PreprocessorDefinitions>
       <MinimalRebuild>false</MinimalRebuild>
       <ExceptionHandling>
       </ExceptionHandling>
@@ -277,8 +277,8 @@
     </ClCompile>
     <Link>
       <AdditionalOptions>/export:main %(AdditionalOptions)</AdditionalOptions>
-      <AdditionalDependencies>pin.lib;xed.lib;pincrt.lib;kernel32.lib;crtbeginS.obj</AdditionalDependencies>
-      <AdditionalLibraryDirectories>C:\pin\intel64\lib;C:\pin\intel64\lib-ext;C:\pin\extras\xed-intel64\lib;C:\pin\intel64\runtime\pincrt;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalDependencies>pin.lib;pinipc.lib;xed.lib;pincrt.lib;kernel32.lib;crtbeginS.obj</AdditionalDependencies>
+      <AdditionalLibraryDirectories>C:\pin3.27\intel64\lib;C:\pin3.27\intel64\lib-ext;C:\pin3.27\extras\xed-intel64\lib;C:\pin3.27\intel64\runtime\pincrt;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <IgnoreAllDefaultLibraries>true</IgnoreAllDefaultLibraries>
       <IgnoreSpecificDefaultLibraries>%(IgnoreSpecificDefaultLibraries)</IgnoreSpecificDefaultLibraries>
       <GenerateDebugInformation>true</GenerateDebugInformation>
@@ -297,6 +297,7 @@
     </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="dbgsymbol_helper.cpp" />
     <ClCompile Include="extern_function_reader.cpp" />
     <ClCompile Include="pin_helper.cpp" />
     <ClCompile Include="themida_deobfuscator.cpp" />
@@ -308,6 +309,7 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="config.h" />
+    <ClInclude Include="dbgsymbol_helper.h" />
     <ClInclude Include="external_function_reader.h" />
     <ClInclude Include="stringtrim.h" />
     <ClInclude Include="pin_helper.h" />

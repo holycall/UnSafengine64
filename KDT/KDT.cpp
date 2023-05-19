@@ -36,7 +36,7 @@ string WorkingPath() {
 }
 
 int read_config_file(string config_file) {
-	CONFIG = ExePath() + "\\" + CONFIG;
+	CONFIG = ExePath() + "\\" + CONFIG;	
 
 	ifstream infile(CONFIG);
 	if (!infile) {
@@ -45,8 +45,8 @@ int read_config_file(string config_file) {
 	}
 
 	string line;
-
-	while (infile.eof()) {
+	
+	while (!infile.eof()) {
 		getline(infile, line);
 		if (line.find("PIN_DIR") != string::npos) {
 			size_t pos = line.find("=");
@@ -125,8 +125,8 @@ int main(int argc, char** argv)
 		cout << "        file_name : obfuscated file name" << endl;
 		exit(-1);
 	}
-
-	read_config_file(CONFIG);
+	
+	read_config_file(CONFIG);	
 
 	packer_type = string(argv[1]);	
 	cmd_line = PINEXE + " -t ";

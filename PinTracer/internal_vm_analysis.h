@@ -2,7 +2,7 @@
 #include "pin.H"
 #include "pin_helper.h"
 
-extern bool isIntenalVMLog;
+extern bool isInternalVMLog;
 
 void INS_InternalVMAnalysis(ADDRINT addr, BOOL is_indirect_branch, THREADID tid);
 void BBL_InternalVMAnalysis(ADDRINT addr, THREADID threadid);
