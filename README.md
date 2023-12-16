@@ -1,8 +1,8 @@
 # UnSafengine64
-Unpack Safengine 2.3.9 protected executables. 
+Unpack Safengine 2.3.x ~ 2.4.0 protected executables. 
 
 ## Prerequisite
-[Intel Pin 3.18](https://software.intel.com/content/www/us/en/develop/articles/pin-a-dynamic-binary-instrumentation-tool.html).
+[Intel Pin 3.18 (Windows MSVC)](https://software.intel.com/content/www/us/en/develop/articles/pin-a-dynamic-binary-instrumentation-tool.html).
 
 Extract Pin 3.18 into "C:\pin". 
 
