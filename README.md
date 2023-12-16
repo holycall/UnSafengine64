@@ -7,7 +7,7 @@ Unpack Safengine 2.3.9 protected executables.
 Extract Pin 3.18 into "C:\pin". 
 
 ## Build
-Requires Visual Studio 2019. 
+Requires Visual Studio 2019 or higher. 
 Build two projects. 
 A pintool dll file and a CUI executable will be copied into "C:\pintool". 
 
